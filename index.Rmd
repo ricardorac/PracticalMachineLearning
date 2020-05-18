@@ -1,5 +1,5 @@
 ---
-title: "Exercise Execution Prediction"
+title: "Human Activity Execution Prediction"
 author: "Ricardo Costa"
 date: "5/18/2020"
 output: html_document
@@ -132,8 +132,6 @@ ldaFit <- train(classe ~ ., method="lda", data=training, trControl=trainCtrl, mo
 rpartFit <- train(classe ~ ., method="rpart", data=training, trControl=trainCtrl, model = FALSE)
 ```
 
-As expected, Random Forest (Accuracy: `r cmRfPredTest$overall[[1]]`) and Boosting (Accuracy: `r cmBoostPredTest$overall[[1]]`) got better results than LDA (Accuracy: `r cmLdaPredTest$overall[[1]]`). But the really unexpected results were the Decision Tree model, which got an accuracy of only `r cmRpartPredTest$overall[[1]]`.
-
 ```{r predict, echo=FALSE}
 rfPredTrain <- predict(rfFit, training)
 boostPredTrain <- predict(boostFit, training)
@@ -155,6 +153,8 @@ cmBoostPredTest <- confusionMatrix(boostPredTest, testing$classe)
 cmLdaPredTest <- confusionMatrix(ldaPredTest, testing$classe)
 cmRpartPredTest <- confusionMatrix(rpartPredTest, testing$classe)
 ```
+
+As expected, Random Forest (Accuracy: `r cmRfPredTest$overall[[1]]`) and Boosting (Accuracy: `r cmBoostPredTest$overall[[1]]`) got better results than LDA (Accuracy: `r cmLdaPredTest$overall[[1]]`). But the really unexpected results were the Decision Tree model, which got an accuracy of only `r cmRpartPredTest$overall[[1]]`.
 
 After validating the Random Forest model using the testing data set, I got the confusion matrix bellow.
 
@@ -193,3 +193,11 @@ cmCombPredTest$table
 ## Expected out-of-sample error
 
 The expected out-of-sample error corresponds to the inverse of accuracy (1-accuracy) in the testing data. In the two best models (stackd model and random forest), the expected out-of-sample error are `r 1-cmCombPredTest$overall[[1]]` and `r 1-cmRfPredTest$overall[[1]]`, respectively.
+
+```{r echo=FALSE, include=FALSE}
+combPredFinal <- predict(combfit, finaltesting)
+combPredFinal
+
+rfPredFinal <- predict(rfFit, finaltesting)
+rfPredFinal
+```
