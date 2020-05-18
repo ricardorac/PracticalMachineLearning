@@ -14,25 +14,44 @@ set.seed(3523)
 library(caret)
 library(ggplot2)
 library(dplyr)
+library(e1071)
 ```
 
-```{r load, include=FALSE, echo=FALSE}
+```{r load, include=FALSE, echo=FALSE, cache=TRUE}
 pmltraining = read.csv("pml-training.csv")
 pmltesting = read.csv("pml-testing.csv")
 ```
 
-```{r partition, include=FALSE, echo=FALSE}
-#inTrain = createDataPartition(pmltraining$classe, p = 0.8)[[1]]
-#cvtraining = pmltraining[ inTrain,]
-#cvtesting = pmltraining[-inTrain,]
+## Summary
 
-# Removing unneeded data
-training <- subset(pmltraining, select = -c(user_name,raw_timestamp_part_1,raw_timestamp_part_2, cvtd_timestamp, new_window, num_window))
-testing <- subset(pmltesting, select = -c(user_name,raw_timestamp_part_1,raw_timestamp_part_2, cvtd_timestamp, new_window, num_window))
+In this project I will use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. The goal of this project is to predict the manner in which users did the exercise.
+
+```{r cleaning, include=FALSE, echo=FALSE}
+# Removing unnecessary data
+training <- subset(pmltraining, select = -c(X, user_name,raw_timestamp_part_1,raw_timestamp_part_2, cvtd_timestamp, new_window, num_window))
+
+finaltesting <- subset(pmltesting, select = -c(X, user_name,raw_timestamp_part_1,raw_timestamp_part_2, cvtd_timestamp, new_window, num_window))
+```
+
+## Exploring Data
+The dataset is composed of 19,622 observations with 160 variables, being 159 of possible predictors and one final classifier (classe). You can see a histogram of the data bellow. There are five classes, with a sligth bigger concentration of observations of classe "A".
+
+```{r explore, echo=FALSE}
+pal <- "Set1"
+
+qplot(classe, fill=classe, data = training)
+```
+
+## Cleaning Data
+
+Due to the number of possible predictors, I opted to drop columns with a large number of NAs, which were mainly aggregator (min, avg, stddev, var, skewness, amplitude, and kurtosis) of the other predictors.
+
+```{r dropNAs, include=FALSE, echo=FALSE}
 
 # Removing columns with few data
  
 allnames <- names(training)
+allnamestest <- names(finaltesting)
 
 removenames <- allnames[grepl(allnames,pattern = "^max_*")]
 removenames <-  c(removenames, allnames[grepl(allnames,pattern = "^min_*")])
@@ -40,37 +59,137 @@ removenames <-  c(removenames, allnames[grepl(allnames,pattern = "^amplitude_*")
 removenames <-  c(removenames, allnames[grepl(allnames,pattern = "^var_*")])
 removenames <-  c(removenames, allnames[grepl(allnames,pattern = "^avg_*")])
 removenames <-  c(removenames, allnames[grepl(allnames,pattern = "^stddev_*")])
+removenames <-  c(removenames, allnames[grepl(allnames,pattern = "^skewness_*")])
+removenames <-  c(removenames, allnames[grepl(allnames,pattern = "^kurtosis_*")])
 
 keepnames <- allnames[!(allnames %in% removenames)]
+keepnamestest <- allnamestest[!(allnamestest %in% removenames)]
 
 training <- training[, keepnames]
-testing <- testing[, keepnames]
+finaltesting <- finaltesting[, keepnamestest]
 ```
 
-```{r train, include=FALSE, echo=FALSE}
-trainCtrl <- trainControl(method = "cv")
-rfFit <- train(classe ~ ., method="rf", data=training, trControl=trainCtrl)
+Next steping was removing the predictors with a high correlation (over .90), keeping only one predictor for each correlated set.
+
+```{r correlations, include=FALSE, echo=FALSE, results='hide'}
+tcor <- subset(training, select = -c(classe))
+cortraining <- cor(tcor)
+idx <- 1
+rnames <- rownames(cortraining)
+apply(cbind(seq_len(nrow(cortraining)), cortraining), 1, function(x) {
+  c <- x[-1]
+  y <- c[abs(c) > 0.9 & abs(c) != 1]
+  if (length(y) > 0) {
+    cat("Var[",x[1],"]: ",rnames[x[1]])
+    print("\n Correlated: ");
+    print(sort(abs(y), decreasing=TRUE))
+  }
+})
+```
+
+
+```{r dropcorrelated, include=FALSE, echo=FALSE}
+cornames <- c("accel_belt_z", "total_accel_belt","accel_belt_y", "accel_belt_x", "gyros_arm_y", "gyros_dumbbell_z", "gyros_forearm_z", "gyros_arm_y")
+
+allnames <- names(training)
+allnamestest <- names(finaltesting)
+
+keepnames <- allnames[!(allnames %in% cornames)]
+keepnamestest <- allnamestest[!(allnamestest %in% cornames)]
+
+training <- training[, keepnames]
+finaltesting <- finaltesting[, keepnamestest]
+
+```
+
+## Data Partitioning
+
+After cleaning data, the training data set had a total of 45 predictors plus the classificator (classe). To do a cross-validation test I partioned the data in training (3/4) and testing (1/4) datasets.
+
+```{r partition, include=FALSE, echo=FALSE}
+inTrain = createDataPartition(pmltraining$classe, p = 0.75)[[1]]
+
+testing = training[-inTrain,]
+training = training[ inTrain,]
+```
+
+## Model Selection
+
+I opted to build 4 models, all of them with the same `trainControl` (method = "cv", number=5). Unfortunately the machine used to do the training is really old, so any number bigger than 5 would took too long to finish processing.
+
+The chosen models where:
+
+1. Random Forest
+2. Boosting
+3. Linear Discriminant Analysis
+4. Decision Tree
+
+```{r train, include=FALSE, echo=FALSE, cache=TRUE}
+trainCtrl <- trainControl(method = "cv", savePredictions = "none", number=5)
+rfFit <- train(classe ~ ., method="rf", data=training, trControl=trainCtrl, model = FALSE)
 boostFit <- train(classe ~ ., method="gbm", data=training, trControl=trainCtrl)
-ldaFit <- train(classe ~ ., method="lda", data=training, trControl=trainCtrl)
-rpartFit <- train(classe ~ ., method="rpart", data=training, trControl=trainCtrl)
+ldaFit <- train(classe ~ ., method="lda", data=training, trControl=trainCtrl, model = FALSE)
+rpartFit <- train(classe ~ ., method="rpart", data=training, trControl=trainCtrl, model = FALSE)
 ```
 
-## R Markdown
+As expected, Random Forest (Accuracy: `r cmRfPredTest$overall[[1]]`) and Boosting (Accuracy: `r cmBoostPredTest$overall[[1]]`) got better results than LDA (Accuracy: `r cmLdaPredTest$overall[[1]]`). But the really unexpected results were the Decision Tree model, which got an accuracy of only `r cmRpartPredTest$overall[[1]]`.
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+```{r predict, echo=FALSE}
+rfPredTrain <- predict(rfFit, training)
+boostPredTrain <- predict(boostFit, training)
+ldaPredTrain <- predict(ldaFit, training)
+rpartPredTrain <- predict(rpartFit, training)
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+cmRfPredTrain <- confusionMatrix(rfPredTrain, training$classe)
+cmBoostPredTrain <- confusionMatrix(boostPredTrain, training$classe)
+cmLdaPredTrain <- confusionMatrix(ldaPredTrain, training$classe)
+cmRpartPredTrain <- confusionMatrix(rpartPredTrain, training$classe)
 
-```{r cars}
-summary(cars)
+rfPredTest <- predict(rfFit, testing)
+boostPredTest <- predict(boostFit, testing)
+ldaPredTest <- predict(ldaFit, testing)
+rpartPredTest <- predict(rpartFit, testing)
+
+cmRfPredTest <- confusionMatrix(rfPredTest, testing$classe)
+cmBoostPredTest <- confusionMatrix(boostPredTest, testing$classe)
+cmLdaPredTest <- confusionMatrix(ldaPredTest, testing$classe)
+cmRpartPredTest <- confusionMatrix(rpartPredTest, testing$classe)
 ```
 
-## Including Plots
+After validating the Random Forest model using the testing data set, I got the confusion matrix bellow.
 
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
+```{r echo=FALSE}
+cmRfPredTest$table
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+After validating the Boosting model using the testing data set, I got the confusion matrix bellow.
+
+```{r echo=FALSE}
+cmBoostPredTest$table
+```
+
+## Stacked Model
+
+```{r combinedpredict, echo=FALSE}
+combdf <- data.frame(rfPredTest, boostPredTest, classe = testing$classe)
+combfit <- train(classe ~ ., method="rf", data=combdf, trControl=trainCtrl, model = FALSE)
+```
+
+```{r echo=FALSE}
+combPredTest <- predict(combfit, testing)
+
+cmCombPredTest <- confusionMatrix(combPredTest, testing$classe)
+```
+
+To finalize, I opted to build a stacked model combining both, boosting and random forest models. Using the stacked model I got the confusion matrix bellow, with an Accuracy of `r cmCombPredTest$overall[[1]]`. Observing the confusion matrix, it is possible to identify that just one more observation was correctly classified using the stacked classifier than using the random forest classifier.
+
+
+```{r echo=FALSE}
+cmCombPredTest$table
+```
+
+
+## Expected out-of-sample error
+
+The expected out-of-sample error corresponds to the inverse of accuracy (1-accuracy) in the testing data. In the two best models (stackd model and random forest), the expected out-of-sample error are `r 1-cmCombPredTest$overall[[1]]` and `r 1-cmRfPredTest$overall[[1]]`, respectively.
