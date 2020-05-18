@@ -7,6 +7,52 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+set.seed(3523)
+```
+
+```{r libraries, include=FALSE, echo=FALSE}
+library(caret)
+library(ggplot2)
+library(dplyr)
+```
+
+```{r load, include=FALSE, echo=FALSE}
+pmltraining = read.csv("pml-training.csv")
+pmltesting = read.csv("pml-testing.csv")
+```
+
+```{r partition, include=FALSE, echo=FALSE}
+#inTrain = createDataPartition(pmltraining$classe, p = 0.8)[[1]]
+#cvtraining = pmltraining[ inTrain,]
+#cvtesting = pmltraining[-inTrain,]
+
+# Removing unneeded data
+training <- subset(pmltraining, select = -c(user_name,raw_timestamp_part_1,raw_timestamp_part_2, cvtd_timestamp, new_window, num_window))
+testing <- subset(pmltesting, select = -c(user_name,raw_timestamp_part_1,raw_timestamp_part_2, cvtd_timestamp, new_window, num_window))
+
+# Removing columns with few data
+ 
+allnames <- names(training)
+
+removenames <- allnames[grepl(allnames,pattern = "^max_*")]
+removenames <-  c(removenames, allnames[grepl(allnames,pattern = "^min_*")])
+removenames <-  c(removenames, allnames[grepl(allnames,pattern = "^amplitude_*")])
+removenames <-  c(removenames, allnames[grepl(allnames,pattern = "^var_*")])
+removenames <-  c(removenames, allnames[grepl(allnames,pattern = "^avg_*")])
+removenames <-  c(removenames, allnames[grepl(allnames,pattern = "^stddev_*")])
+
+keepnames <- allnames[!(allnames %in% removenames)]
+
+training <- training[, keepnames]
+testing <- testing[, keepnames]
+```
+
+```{r train, include=FALSE, echo=FALSE}
+trainCtrl <- trainControl(method = "cv")
+rfFit <- train(classe ~ ., method="rf", data=training, trControl=trainCtrl)
+boostFit <- train(classe ~ ., method="gbm", data=training, trControl=trainCtrl)
+ldaFit <- train(classe ~ ., method="lda", data=training, trControl=trainCtrl)
+rpartFit <- train(classe ~ ., method="rpart", data=training, trControl=trainCtrl)
 ```
 
 ## R Markdown
